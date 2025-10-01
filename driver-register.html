@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ar">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>تسجيل دليفري</title>
+  <style>
+    body { font-family:"Cairo",sans-serif; direction:rtl; background:#f9fafb; padding:16px; }
+    .card { background:#fff; padding:16px; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.06); margin-bottom:14px; }
+    label { display:block; margin:8px 0 4px; font-size:14px; color:#374151; }
+    input, select { width:100%; padding:10px; border:1px solid #e5e7eb; border-radius:8px; }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .btn { width:100%; padding:12px; background:#1f6feb; color:#fff; border:none; border-radius:8px; cursor:pointer; margin-top:10px; }
+    .map-note { font-size:12px; color:#6b7280; margin-top:6px; }
+  </style>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <h2>🏍️ تسجيل دليفري جديد</h2>
+  <div class="card">
+    <div class="row">
+      <div>
+        <label>الاسم الكامل</label>
+        <input id="name" type="text" placeholder="أدخل اسمك"/>
+      </div>
+      <div>
+        <label>العمر</label>
+        <input id="age" type="number" min="18" placeholder="مثال 25"/>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>رقم الهاتف</label>
+        <input id="phone" type="tel" placeholder="01XXXXXXXXX"/>
+      </div>
+      <div>
+        <label>المنطقة</label>
+        <select id="area">
+          <option value="">اختر منطقتك</option>
+          <option value="A1">العاشر من رمضان</option>
+          <option value="A2">الزقازيق</option>
+          <option value="A3">بلبيس</option>
+        </select>
+      </div>
+    </div>
+    <label>رابط حساب تيليجرام (اختياري للتواصل)</label>
+    <input id="username" type="text" placeholder="username بدون @"/>
+  </div>
+
+  <div class="card">
+    <label>صورة البطاقة (وجه)</label>
+    <input id="idFront" type="file" accept="image/*"/>
+    <label>صورة البطاقة (ظهر)</label>
+    <input id="idBack" type="file" accept="image/*"/>
+    <label>صورة الرخصة</label>
+    <input id="license" type="file" accept="image/*"/>
+    <label>صورة الموتوسيكل</label>
+    <input id="bike" type="file" accept="image/*"/>
+    <label><input id="terms" type="checkbox"/> أوافق على الشروط</label>
+  </div>
+
+  <div class="card">
+    <label>تحديد موقعك على الخريطة</label>
+    <div id="map" style="height:260px;border-radius:8px;overflow:hidden;"></div>
+    <div class="map-note">اسحب العلامة لتحديد موقعك بدقة</div>
+  </div>
+
+  <button class="btn" onclick="submitForm()">إرسال الطلب للمراجعة</button>
+
+  <script>
+    const tg = window.Telegram.WebApp; tg.expand();
+    let map = L.map('map').setView([30.313, 31.741], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    let marker = L.marker([30.313, 31.741], { draggable:true }).addTo(map);
+
+    if(navigator.geolocation){
+      navigator.geolocation.getCurrentPosition(pos=>{
+        marker.setLatLng([pos.coords.latitude, pos.coords.longitude]);
+        map.setView([pos.coords.latitude, pos.coords.longitude], 14);
+      });
+    }
+
+    async function fileToBase64(input){
+      const f = input.files[0]; if(!f) return null;
+      return new Promise((res,rej)=>{
+        const r = new FileReader();
+        r.onload=()=>res(r.result);
+        r.onerror=rej;
+        r.readAsDataURL(f);
+      });
+    }
+
+    async function submitForm(){
+      const payload = {
+        action: "driver_register",
+        name: document.getElementById("name").value?.trim(),
+        age: Number(document.getElementById("age").value),
+        phone: document.getElementById("phone").value?.trim(),
+        areaId: document.getElementById("area").value,
+        username: document.getElementById("username").value?.trim(),
+        location: marker.getLatLng(),
+        idFront: await fileToBase64(document.getElementById("idFront")),
+        idBack: await fileToBase64(document.getElementById("idBack")),
+        license: await fileToBase64(document.getElementById("license")),
+        bike: await fileToBase64(document.getElementById("bike")),
+        terms: document.getElementById("terms").checked
+      };
+      if(!payload.name || !payload.age || !payload.phone || !payload.areaId || !payload.terms){
+        return alert("أكمل البيانات المطلوبة ووافق على الشروط.");
+      }
+      tg.sendData(JSON.stringify(payload));
+      tg.showPopup({ title:"تم", message:"تم إرسال طلبك للمراجعة من الأدمن.", buttons:[{type:"close"}] });
+      tg.close();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ar">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>لوحة السائق</title>
+  <style>
+    body { font-family:"Cairo",sans-serif; direction:rtl; background:#f9fafb; padding:16px; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .card { background:#fff; padding:14px; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+    .title { font-weight:600; margin-bottom:6px; }
+    .btn { padding:10px 14px; background:#1f6feb; color:#fff; border:none; border-radius:8px; cursor:pointer; }
+    .order { border-bottom:1px solid #eee; padding:6px 0; font-size:14px; }
+    canvas { max-width:100%; }
+  </style>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <h2>🚚 لوحة السائق</h2>
+
+  <div class="grid">
+    <div class="card">
+      <div class="title">💳 رصيد المحفظة</div>
+      <div id="wallet">0 جنيه</div>
+    </div>
+    <div class="card">
+      <div class="title">📦 الطلبات المنفذة</div>
+      <div id="ordersCount">0</div>
+    </div>
+    <div class="card">
+      <div class="title">📉 إجمالي الخصومات</div>
+      <div id="deductions">0 جنيه</div>
+    </div>
+    <div class="card">
+      <div class="title">📍 الموقع</div>
+      <button class="btn" onclick="updateLocation()">تحديث موقعي</button>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:12px;">
+    <div class="title">🚚 الطلبات الحالية</div>
+    <div id="ordersList">لا توجد طلبات حالياً</div>
+  </div>
+
+  <div class="card" style="margin-top:12px;">
+    <div class="title">📊 حركة الرصيد (شحن/خصومات)</div>
+    <canvas id="walletChart"></canvas>
+  </div>
+
+  <script>
+    const tg = window.Telegram.WebApp; tg.expand();
+
+    async function loadDashboard(){
+      const driverId = tg.initDataUnsafe?.user?.id;
+      const res = await fetch(`/api/driver/dashboard?driverId=${driverId}`);
+      const data = await res.json();
+
+      document.getElementById("wallet").textContent = data.wallet + " جنيه";
+      document.getElementById("ordersCount").textContent = data.ordersCount;
+      document.getElementById("deductions").textContent = data.deductions + " جنيه";
+
+      const list = document.getElementById("ordersList");
+      list.innerHTML = "";
+      if(!data.orders || data.orders.length === 0){
+        list.textContent = "لا توجد طلبات حالياً";
+      } else {
+        data.orders.forEach(o=>{
+          const div = document.createElement("div");
+          div.className = "order";
+          div.textContent = `طلب ${o.id} - ${o.status} - ${o.price} جنيه`;
+          list.appendChild(div);
+        });
+      }
+
+      renderChart(data.history || []);
+    }
+
+    function renderChart(history){
+      const labels = history.map(h=>h.date);
+      const charges = history.map(h=>h.charge || 0);
+      const deductions = history.map(h=>h.deduction || 0);
+
+      const ctx = document.getElementById('walletChart').getContext('2d');
+      if(window._chart) window._chart.destroy();
+      window._chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            { label:'شحن', data:charges, borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.2)' },
+            { label:'خصومات', data:deductions, borderColor:'#ef4444', backgroundColor:'rgba(239,68,68,0.2)' }
+          ]
+        },
+        options: { responsive:true, plugins:{ legend:{ position:'bottom' } } }
+      });
+    }
+
+    function updateLocation(){
+      if(!navigator.geolocation) return alert("GPS غير مدعوم.");
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        const driverId = tg.initDataUnsafe?.user?.id;
+        await fetch("/api/delivery/driver/update", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ driverId, lat: pos.coords.latitude, lng: pos.coords.longitude })
+        });
+        tg.showPopup({ title:"تم", message:"تم تحديث موقعك", buttons:[{type:"close"}] });
+      });
+    }
+
+    loadDashboard();
+    setInterval(loadDashboard, 10000);
+  </script>
+</body>
+</html>

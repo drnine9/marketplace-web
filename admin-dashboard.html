@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ar">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>لوحة الأدمن</title>
+  <style>
+    body { font-family:"Cairo",sans-serif; direction:rtl; background:#f9fafb; padding:12px; }
+    .tabs { display:flex; gap:8px; margin-bottom:12px; }
+    .tab { padding:8px 12px; background:#1f6feb; color:#fff; border-radius:8px; cursor:pointer; }
+    .panel { background:#fff; padding:12px; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+    .list { margin-top:8px; border-top:1px solid #eee; }
+    .item { padding:8px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center; }
+    .btn { padding:6px 10px; background:#10b981; color:#fff; border:none; border-radius:6px; cursor:pointer; margin-left:6px; }
+    .btn-danger { background:#ef4444; }
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    input, select { width:100%; padding:10px; border:1px solid #e5e7eb; border-radius:8px; }
+    label { display:block; margin:6px 0 4px; font-size:14px; color:#374151; }
+  </style>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <h2>👨‍💼 لوحة الأدمن</h2>
+  <div class="tabs">
+    <div class="tab" onclick="show('products')">المنتجات</div>
+    <div class="tab" onclick="show('orders')">الطلبات</div>
+    <div class="tab" onclick="show('drivers')">الدليفري</div>
+    <div class="tab" onclick="show('areas')">المناطق</div>
+    <div class="tab" onclick="show('invoices')">الفواتير والإيرادات</div>
+  </div>
+
+  <div id="panel" class="panel"></div>
+
+  <script>
+    const tg = window.Telegram.WebApp; tg.expand();
+    let panel = document.getElementById("panel");
+
+    async function show(tab){
+      if(tab === 'products') return renderProducts();
+      if(tab === 'orders') return renderOrders();
+      if(tab === 'drivers') return renderDrivers();
+      if(tab === 'areas') return renderAreas();
+      if(tab === 'invoices') return renderInvoices();
+    }
+
+    async function renderProducts(){
+      const res = await fetch("/api/admin/products");
+      const data = await res.json();
+      panel.innerHTML = `
+        <div class="grid2">
+          <div>
+            <label>اسم المنتج</label><input id="p_title"/>
+            <label>السعر</label><input id="p_price" type="number"/>
+            <button class="btn" onclick="createProduct()">إضافة</button>
+          </div>
+          <div>
+            <div class="list">${(data.products||[]).map(p=>`
+              <div class="item">
+                <div>📦 ${p.title} — ${p.price} جنيه</div>
+                <div>
+                  <button class="btn" onclick="editProduct('${p.sku}')">تعديل</button>
+                  <button class="btn btn-danger" onclick="deleteProduct('${p.sku}')">حذف</button>
+                </div>
+              </div>`).join('')}</div>
+          </div>
+        </div>`;
+    }
+
+    async function createProduct(){
+      const title = document.getElementById("p_title").value?.trim();
+      const price = Number(document.getElementById("p_price").value);
+      if(!title || !price) return alert("أكمل الاسم والسعر.");
+      await fetch("/api/admin/products", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ title, price }) });
+      renderProducts();
+    }
+    async function deleteProduct(sku){
+      await fetch(`/api/admin/products/${sku}`, { method:"DELETE" });
+      renderProducts();
+    }
+    function editProduct(sku){
+      tg.sendData(JSON.stringify({ action:"admin_edit_product", sku }));
+    }
+
+    async function renderOrders(){
+      const res = await fetch("/api/admin/orders");
+      const data = await res.json();
+      panel.innerHTML = `
+        <div class="list">${(data.orders||[]).map(o=>`
+          <div class="item">
+            <div>📄 طلب ${o.id} — ${o.status} — ${o.price} جنيه — عميل: ${o.userId}</div>
+            <div>
+              <select id="driver_${o.id}">
+                ${(data.drivers||[]).map(d=>`<option value="${d.driverId}" ${d.driverId===o.driverId?'selected':''}>${d.name}</option>`).join('')}
+              </select>
+              <button class="btn" onclick="assignDriver('${o.id}')">تعيين سائق</button>
+              <button class="btn" onclick="updateStatus('${o.id}','delivered')">تم التسليم</button>
+            </div>
+          </div>`).join('')}</div>`;
+    }
+    async function assignDriver(orderId){
+      const driverId = document.getElementById(`driver_${orderId}`).value;
+      await fetch("/api/admin/orders/assign", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ orderId, driverId }) });
+      renderOrders();
+    }
+    async function updateStatus(orderId,status){
+      await fetch("/api/admin/orders/status", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ orderId, status }) });
+      renderOrders();
+    }
+
+    async function renderDrivers(){
+      const res = await fetch("/api/admin/drivers");
+      const data = await res.json();
+      panel.innerHTML = `
+        <div class="list">${(data.applications||[]).map(a=>`
+          <div class="item">
+            <div>👤 طلب دليفري: ${a.name} — منطقة: ${a.areaId} — هاتف: ${a.phone}</div>
+            <div>
+              <button class="btn" onclick="approveDriver('${a.appId}')">قبول</button>
+              <button class="btn btn-danger" onclick="rejectDriver('${a.appId}')">رفض</button>
+            </div>
+          </div>`).join('')}</div>
+        <hr/>
+        <div class="list">${(data.drivers||[]).map(d=>`
+          <div class="item">
+            <div>🏍️ ${d.name} — رصيد: ${d.wallet} جنيه — منطقة: ${d.areaId}</div>
+            <div>
+              <button class="btn" onclick="openDriver('${d.driverId}')">فتح ملف</button>
+            </div>
+          </div>`).join('')}</div>`;
+    }
+    async function approveDriver(appId){
+      await fetch("/api/admin/drivers/approve", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ appId }) });
+      renderDrivers();
+    }
+    async function rejectDriver(appId){
+      await fetch("/api/admin/drivers/reject", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ appId }) });
+      renderDrivers();
+    }
+    function openDriver(driverId){
+      tg.sendData(JSON.stringify({ action:"admin_open_driver", driverId }));
+    }
+
+    async function renderAreas(){
+      const res = await fetch("/api/admin/areas");
+      const data = await res.json();
+      panel.innerHTML = `
+        <div class="grid2">
+          <div>
+            <label>اسم المنطقة</label><input id="a_name"/>
+            <label>معرف المنطقة</label><input id="a_id"/>
+            <label>نقاط المضلع (JSON lat/lng)</label><input id="a_poly" placeholder='[{"lat":30.1,"lng":31.2}]'/>
+            <button class="btn" onclick="createArea()">إضافة منطقة</button>
+          </div>
+          <div>
+            <div class="list">${(data.areas||[]).map(a=>`
+              <div class="item">
+                <div>📍 ${a.name} (${a.areaId}) — نقاط: ${a.polygon?.length||0}</div>
+                <button class="btn btn-danger" onclick="deleteArea('${a.areaId}')">حذف</button>
+              </div>`).join('')}</div>
+          </div>
+        </div>`;
+    }
+    async function createArea(){
+      const name = document.getElementById("a_name").value?.trim();
+      const areaId = document.getElementById("a_id").value?.trim();
+      const polygon = JSON.parse(document.getElementById("a_poly").value || "[]");
+      if(!name || !areaId || polygon.length===0) return alert("أكمل البيانات.");
+      await fetch("/api/admin/areas", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ name, areaId, polygon }) });
+      renderAreas();
+    }
+    async function deleteArea(areaId){
+      await fetch(`/api/admin/areas/${areaId}`, { method:"DELETE" });
+      renderAreas();
+    }
+
+    async function renderInvoices(){
+      const res = await fetch("/api/admin/invoices");
+      const data = await res.json();
+      panel.innerHTML = `
+        <div class="item"><div>إجمالي المبيعات: ${data.totalSales || 0} جنيه</div></div>
+        <div class="item"><div>عمولة المنصة (3%): ${data.totalCommission || 0} جنيه</div></div>
+        <div class="item"><div>صافي الموردين: ${data.totalNetForSuppliers || 0} جنيه</div></div>
+        <hr/>
+        <div class="list">${(data.invoices||[]).map(v=>`
+          <div class="item">
+            <div>🧾 فاتورة ${v.id} — ${v.amount} جنيه — حالة: ${v.status}</div>
+            <div>
+              <button class="btn" onclick="confirmInvoice('${v.id}')">تأكيد</button>
+              <button class="btn btn-danger" onclick="rejectInvoice('${v.id}')">رفض</button>
+            </div>
+          </div>`).join('')}</div>`;
+    }
+    async function confirmInvoice(id){
+      await fetch("/api/admin/invoices/confirm", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ id }) });
+      renderInvoices();
+    }
+    async function rejectInvoice(id){
+      await fetch("/api/admin/invoices/reject", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ id }) });
+      renderInvoices();
+    }
+
+    show('products');
+  </script>
+</body>
+</html>

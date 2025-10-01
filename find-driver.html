@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ar">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>ابحث عن دليفري قريب</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <style>
+    body { margin:0; font-family:"Cairo",sans-serif; direction:rtl; }
+    #topbar { position:fixed; top:10px; left:10px; right:10px; z-index:1000; display:flex; gap:8px; justify-content:flex-start; }
+    .btn { padding:8px 12px; background:#1f6feb; color:#fff; border:none; border-radius:8px; cursor:pointer; }
+    #map { height:100vh; width:100%; }
+    .popup-btn { display:inline-block; margin-top:6px; padding:6px 10px; background:#10b981; color:#fff; border-radius:6px; text-decoration:none; }
+  </style>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <div id="topbar">
+    <button class="btn" onclick="setMode('nearest')">أقرب دليفري</button>
+    <button class="btn" onclick="setMode('all')" style="background:#0ea5e9">كل الدليفري</button>
+  </div>
+  <div id="map"></div>
+  <script>
+    const tg = window.Telegram.WebApp; tg.expand();
+    let mode = 'nearest';
+    let map = L.map('map').setView([30.0444, 31.2357], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    function setMode(m){ mode = m; loadDrivers(); }
+
+    let userMarker;
+    function setUser(lat,lng){
+      if(userMarker){ userMarker.setLatLng([lat,lng]); } else {
+        userMarker = L.marker([lat,lng],{title:"موقعك"}).addTo(map);
+        userMarker.bindPopup("📍 موقعك الحالي").openPopup();
+      }
+      map.setView([lat,lng], 14);
+    }
+
+    let driverLayer = L.layerGroup().addTo(map);
+
+    async function loadDrivers(){
+      driverLayer.clearLayers();
+      if(!navigator.geolocation) return alert("GPS غير مدعوم.");
+      navigator.geolocation.getCurrentPosition(async (pos)=>{
+        const lat = pos.coords.latitude, lng = pos.coords.longitude;
+        setUser(lat,lng);
+        const res = await fetch(`/api/drivers/nearby?lat=${lat}&lng=${lng}`);
+        const data = await res.json();
+
+        if((data.drivers || []).length === 0){
+          tg.sendData(JSON.stringify({ action:"no_drivers" }));
+          return;
+        }
+
+        let list = data.drivers;
+        if(mode === 'nearest'){
+          list = list.filter(d=>d.lastLocation).sort((a,b)=>{
+            const da = distance(lat,lng,a.lastLocation.lat,a.lastLocation.lng);
+            const db = distance(lat,lng,b.lastLocation.lat,b.lastLocation.lng);
+            return da - db;
+          }).slice(0,1);
+          if(list.length === 0){
+            list = data.drivers;
+          }
+        }
+
+        list.forEach(d=>{
+          if(d.lastLocation){
+            const m = L.marker([d.lastLocation.lat, d.lastLocation.lng]).addTo(driverLayer);
+            const contact = d.username ? `<a class="popup-btn" href="https://t.me/${d.username}" target="_blank">تواصل</a>` : '';
+            m.bindPopup(`🚚 ${d.name || 'سائق'}<br>💳 رصيد: ${d.wallet || 0} جنيه<br>${contact}`);
+          }
+        });
+      });
+    }
+
+    function distance(lat1,lon1,lat2,lon2){
+      function toRad(v){ return v * Math.PI / 180; }
+      const R=6371, dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
+      const a=Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+      return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)); // كم
+    }
+
+    loadDrivers();
+  </script>
+</body>
+</html>
