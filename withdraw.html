@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ar">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>سحب النسبة</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    body { font-family:"Cairo",sans-serif; direction:rtl; background:#f3f4f6; padding:20px; }
+    .container { max-width:500px; margin:auto; }
+    .card { background:#fff; padding:20px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.08); margin-bottom:16px; }
+    h2 { margin-top:0; color:#1f2937; }
+    label { display:block; margin:10px 0 6px; font-weight:600; }
+    input { width:100%; padding:12px; border:1px solid #d1d5db; border-radius:8px; }
+    .btn { width:100%; padding:14px; background:#2563eb; color:#fff; border:none; border-radius:8px; font-size:16px; cursor:pointer; margin-top:12px; }
+    .btn:hover { background:#1d4ed8; }
+    .note { font-size:13px; color:#6b7280; margin-top:6px; }
+    .error { color:#ef4444; font-size:13px; margin-top:4px; display:none; }
+  </style>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h2>💵 طلب سحب النسبة</h2>
+      <label>المبلغ المطلوب</label>
+      <input id="amount" type="number" min="1"/>
+
+      <label>اسم صاحب الحساب</label>
+      <input id="payerName" type="text"/>
+
+      <label>رقم الحساب/الموبايل</label>
+      <input id="payerPhone" type="tel"/>
+
+      <label>صورة إيصال الدفع (رسوم السحب)</label>
+      <input id="paymentReceipt" type="file" accept="image/*"/>
+      <div id="errPayment" class="error">❌ يجب إدخال بيانات الدفع كاملة</div>
+
+      <button class="btn" onclick="withdraw()">إرسال الطلب</button>
+    </div>
+  </div>
+
+  <script>
+    const tg = window.Telegram.WebApp; tg.expand();
+
+    async function fileToBase64(input){
+      const f=input.files[0]; if(!f) return null;
+      return new Promise((res,rej)=>{
+        const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(f);
+      });
+    }
+
+    async function withdraw(){
+      const payload = {
+        action:"withdraw",
+        amount:Number(document.getElementById("amount").value),
+        payerName:document.getElementById("payerName").value.trim(),
+        payerPhone:document.getElementById("payerPhone").value.trim(),
+        paymentReceipt:await fileToBase64(document.getElementById("paymentReceipt"))
+      };
+
+      if(!payload.amount || !payload.payerName || !payload.payerPhone || !payload.paymentReceipt){
+        document.getElementById("errPayment").style.display="block"; return;
+      }
+
+      tg.sendData(JSON.stringify(payload));
+      tg.showPopup({title:"تم",message:"✅ تم إرسال طلب السحب مع بيانات الدفع للمراجعة.",buttons:[{type:"close"}]});
+      tg.close();
+    }
+  </script>
+</body>
+</html>
